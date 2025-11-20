@@ -16,5 +16,9 @@ Dwight Schrute,dwight-schrute@bearbeetsbattlestargalactica.us
 Ryan Howard,ryan@dm-infinity.io
 ```
 - Run `secret_santa.py`
+- Each participant will receive an email with the name of their lucky colleague
+- A `assignations.txt` file will be generated, containing the assignations
+- The next year, you can rename that file to `previous_assignations.txt` and the script will make sure that the same
+gifter-giftee combination does not happen again
 
 

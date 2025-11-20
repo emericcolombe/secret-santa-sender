@@ -1,7 +1,7 @@
 import random
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 from email_sender import EmailSender
 
@@ -25,29 +25,57 @@ class Participant:
 
 class SecretSanta:
 
-    def __init__(self, participant_file: str):
-        self.participants: List[Participant] = []
-        self.non_participants: List[Participant] = []
-        self.assignments: Dict[Participant, Participant] = dict()
+    def __init__(self, participant_file: str, previous_assignations_file: Optional[str]):
+        self.assignations: Dict[Participant, Participant] = dict()
+
+        self.participants, self.non_participants = self.read_participants_file(participant_file)
+        self.participants.sort(key=lambda p: p.first_name)
+        self.non_participants.sort(key=lambda p: p.first_name)
+
+        self.previous_assignations: Optional[Dict[str, str]] = None
+        if previous_assignations_file:
+            self.previous_assignations = self.read_previous_assignations_file(previous_assignations_file)
+
+    @staticmethod
+    def read_participants_file(participant_file: str) -> Tuple[List[Participant], List[Participant]]:
+        participants: List[Participant] = []
+        non_participants: List[Participant] = []
 
         # Read the input file
         with open(participant_file, 'r', encoding='utf-8') as file:
             file_lines = file.readlines()
-
         # Sort the potential participants
         for line in file_lines:
             name, email = line.split(',')
             first_name = name.split()[0]
             last_name = ' '.join(name.split()[1:])
-            participant = Participant(first_name, last_name, email.strip())
+            participant = Participant(first_name, last_name, email.strip().lower())
             if line.startswith('#'):
                 participant.first_name = participant.first_name.strip('#')
-                self.non_participants.append(participant)
+                non_participants.append(participant)
             else:
-                self.participants.append(participant)
+                participants.append(participant)
 
-        self.participants.sort(key=lambda p: p.first_name)
-        self.non_participants.sort(key=lambda p: p.first_name)
+        return participants, non_participants
+
+    @staticmethod
+    def read_previous_assignations_file(assignations_file: str) -> Dict[str, str]:
+        assignations: Dict[str, str] = {}
+
+        # Read the input file
+        with open(assignations_file, 'r', encoding='utf-8') as file:
+            file_lines = file.readlines()
+
+        # Sort the potential participants
+        for line in file_lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            _, email_from, _, email_to = line.split(' -> ')
+            assignations[email_from.lower()] = email_to.lower()
+
+        return assignations
 
     def assign_gifts(self):
         shuffled_participants = self.participants.copy()
@@ -55,22 +83,33 @@ class SecretSanta:
 
         # Each participant must give gift to the next one
         for gifter, giftee in zip(shuffled_participants, shuffled_participants[1:]):
-            self.assignments[gifter] = giftee
+            self.assignations[gifter] = giftee
 
         # The last participant must give gift to the first one
-        self.assignments[shuffled_participants[-1]] = shuffled_participants[0]
+        self.assignations[shuffled_participants[-1]] = shuffled_participants[0]
+
+        if self.previous_assignations and not self.check_assignations_ok():
+            exit(0)
 
         # Write assignations to file
-        with open('assignations.txt', 'w') as file:
+        with open('assignations.txt', 'w', encoding="utf-8") as file:
             file.write(f'# Generated on {datetime.now()}\n\n')
 
-            for gifter, giftee in self.assignments.items():
+            for gifter, giftee in self.assignations.items():
                 file.write(f'{gifter} -> {giftee}\n')
+
+    def check_assignations_ok(self) -> bool:
+        # For each gifter, check that they did not have the same giftee last year
+        for gifter, giftee in self.assignations.items():
+            if gifter.email in self.previous_assignations.keys() and self.previous_assignations[gifter.email] == giftee.email:
+                print(f'Oopsie, {gifter.full_name} already gave a present to {giftee.full_name} last year !')
+                return False
+        return True
 
     def send_emails(self):
         email_sender = EmailSender()
         email_sender.connect()
-        for gifter, giftee in self.assignments.items():
+        for gifter, giftee in self.assignations.items():
             text_message = self.generate_message(gifter, giftee)
             html_message = self.generate_html_message(gifter, giftee)
             email_sender.send_email(gifter.email,
@@ -129,7 +168,7 @@ class SecretSanta:
 
 
 if __name__ == '__main__':
-    secret_santa = SecretSanta('participants.txt')
+    secret_santa = SecretSanta('participants.txt', 'previous_assignations.txt')
     secret_santa.assign_gifts()
     secret_santa.print_summary()
     print('Sending emails...')
